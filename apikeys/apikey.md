@@ -1,0 +1,6 @@
+
+NEXT_PUBLIC_SUPABASE_URL=https://uufwfagmbuncwbhtqseb.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=sb_publishable_0Mi8LFjVS_t7V2yJxQhw4A_Agx1yMAA
+
+alibaba cloud studio api key sk-efd012c004604cea986e57f83e7b1318
+
