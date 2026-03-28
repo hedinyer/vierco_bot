@@ -198,6 +198,38 @@ class SupabaseBusinessDB:
         )
         return result.data or []
 
+    def list_notifyable_paid_orders_with_details(
+        self, canonical_statuses: list[str], *, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """
+        Recent orders whose status matches any of the given labels (case variants included).
+        Includes nested customer, shipping address and line items.
+        """
+        variants: list[str] = []
+        for s in canonical_statuses:
+            t = (s or "").strip()
+            if not t:
+                continue
+            for v in (t, t.upper(), t.lower(), t.capitalize()):
+                if v not in variants:
+                    variants.append(v)
+        if not variants:
+            return []
+        result = (
+            self.client.table("orders")
+            .select(
+                "*, "
+                "customers!customer_id(*), "
+                "shipping_addresses!shipping_address_id(*), "
+                "order_items(*)"
+            )
+            .in_("status", variants)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+
     def sales_summary(self, days: int = 7) -> dict[str, Any]:
         since = datetime.now(timezone.utc) - timedelta(days=days)
         result = (

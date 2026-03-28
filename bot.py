@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
 import asyncio
+import json
 import logging
 import mimetypes
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from agent import TelegramBusinessAgent
 
@@ -98,6 +101,126 @@ READ_KEYWORDS = {
 }
 
 agent: TelegramBusinessAgent | None = None
+
+# Throttle log when no subscriber chats exist yet
+_NO_SALE_SUBSCRIBERS_LAST_LOG: float = 0.0
+
+_DEFAULT_PAID_NOTIFY_STATUSES = ("PAID", "COMPLETED", "DELIVERED")
+
+
+def _sale_notify_subscribers_path() -> Path:
+    return Path(
+        os.getenv("SALE_NOTIFY_SUBSCRIBER_CHATS_STATE", ".sale_notify_subscriber_chats.json")
+    ).resolve()
+
+
+def _load_sale_notify_chat_ids() -> set[int]:
+    path = _sale_notify_subscribers_path()
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = data.get("chat_ids", [])
+        if not isinstance(raw, list):
+            return set()
+        return {int(x) for x in raw}
+    except Exception:
+        logger.exception("No se pudo leer %s; avisos de venta sin destinatarios persistidos", path)
+        return set()
+
+
+def register_sale_notify_subscriber_chat(chat_id: int) -> None:
+    """Persiste un chat para recibir avisos de nuevas ventas (llamar al interactuar con el bot)."""
+    path = _sale_notify_subscribers_path()
+    ids = _load_sale_notify_chat_ids()
+    if chat_id in ids:
+        return
+    ids.add(chat_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"chat_ids": sorted(ids)}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("Chat %s registrado para avisos de ventas.", chat_id)
+    except Exception:
+        logger.exception("No se pudo guardar suscriptor de avisos en %s", path)
+
+
+def _paid_notify_statuses_from_env() -> list[str]:
+    raw = os.getenv("PAID_ORDER_NOTIFY_STATUSES", "").strip()
+    if not raw:
+        return list(_DEFAULT_PAID_NOTIFY_STATUSES)
+    return [s.strip().upper() for s in raw.split(",") if s.strip()]
+
+
+def _embed_one(row: dict[str, Any], key: str) -> dict[str, Any] | None:
+    val = row.get(key)
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, list) and val:
+        first = val[0]
+        return first if isinstance(first, dict) else None
+    return None
+
+
+def _money_cop(cents: int | None) -> str:
+    v = (int(cents) if cents is not None else 0) / 100.0
+    if abs(v - round(v)) < 1e-9:
+        return f"${int(round(v)):,} COP"
+    return f"${v:,.2f} COP"
+
+
+def _format_new_sale_message(order: dict[str, Any]) -> str:
+    customer = _embed_one(order, "customers") or {}
+    ship = _embed_one(order, "shipping_addresses") or {}
+    items = order.get("order_items") or []
+    if isinstance(items, dict):
+        items = [items]
+
+    lines: list[str] = [
+        "Nueva compra (pago aprobado)",
+        f"Pedido: {order.get('id', '')}",
+        f"Estado: {order.get('status', '')}",
+        f"Método de pago: {order.get('payment_method', '')}",
+        "",
+        "Cliente:",
+        f"- {customer.get('full_name', '—')}",
+        f"- {customer.get('email', '—')}",
+        f"- {customer.get('phone_prefix', '')} {customer.get('phone_number', '')}".strip(),
+        "",
+        "Envío:",
+        f"- Dirección: {ship.get('address_line_1', '—')}",
+        f"- Ciudad: {ship.get('city', '—')}",
+        f"- Departamento / región: {ship.get('region', '—')}",
+        f"- País: {ship.get('country', '—')}",
+        "",
+        "Ítems:",
+    ]
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = it.get("product_name", "—")
+        size = it.get("size", "—")
+        qty = it.get("quantity", 1)
+        line_total = _money_cop(it.get("line_total_cents"))
+        unit = _money_cop(it.get("unit_price_cents"))
+        lines.append(f"- {name} | Talla: {size} | Cant: {qty} | P.u. {unit} | Subtotal línea: {line_total}")
+
+    lines.extend(
+        [
+            "",
+            f"Subtotal pedido: {_money_cop(order.get('subtotal_cents'))}",
+            f"Envío: {_money_cop(order.get('shipping_cents'))}",
+            f"TOTAL: {_money_cop(order.get('total_cents'))}",
+        ]
+    )
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3990] + "\n…(mensaje recortado)"
+    return text
 
 
 def _load_fallback_keys_from_apikey_md() -> None:
@@ -283,6 +406,8 @@ def _resolve_product_any(
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    if update.effective_chat:
+        register_sale_notify_subscriber_chat(update.effective_chat.id)
     await update.message.reply_text(
         "Bot conectado.\n"
         "- Preguntas/consultas: se responden directo.\n"
@@ -293,6 +418,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    if update.effective_chat:
+        register_sale_notify_subscriber_chat(update.effective_chat.id)
     name = update.effective_user.first_name if update.effective_user else "there"
     await update.message.reply_text(f"Hello {name}")
 
@@ -300,6 +427,9 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
+
+    if update.effective_chat:
+        register_sale_notify_subscriber_chat(update.effective_chat.id)
 
     text = update.message.text.strip()
     chat_id = update.effective_chat.id
@@ -496,6 +626,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not update.message or not update.message.photo:
         return
 
+    if update.effective_chat:
+        register_sale_notify_subscriber_chat(update.effective_chat.id)
+
     chat_id = update.effective_chat.id
     pending_flow = PENDING_IMAGE_FLOW_BY_CHAT.get(chat_id)
     if not pending_flow:
@@ -567,13 +700,124 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         PENDING_IMAGE_FLOW_BY_CHAT.pop(chat_id, None)
 
 
+async def _paid_orders_watcher(application: Application) -> None:
+    global _NO_SALE_SUBSCRIBERS_LAST_LOG
+    state_path = Path(os.getenv("NOTIFIED_PAID_ORDERS_STATE", ".notified_paid_order_ids.json")).resolve()
+    poll_s = max(5, int(os.getenv("PAID_ORDERS_POLL_SECONDS", "20")))
+    fetch_limit = max(20, int(os.getenv("PAID_ORDERS_FETCH_LIMIT", "200")))
+    statuses = _paid_notify_statuses_from_env()
+
+    def load_ids() -> set[str]:
+        if not state_path.exists():
+            return set()
+        try:
+            data = json.loads(state_path.read_text(encoding="utf-8"))
+            raw = data.get("ids", [])
+            return {str(x) for x in raw} if isinstance(raw, list) else set()
+        except Exception:
+            logger.exception("Could not read %s; starting with empty notified set", state_path)
+            return set()
+
+    def save_ids(ids: set[str]) -> None:
+        try:
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(
+                json.dumps({"ids": sorted(ids)}, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.exception("Could not write notified order state to %s", state_path)
+
+    notified = load_ids()
+    seed_existing = len(notified) == 0
+    _load_fallback_keys_from_apikey_md()
+
+    logger.info(
+        "Paid-order watcher active (poll every %ss, statuses=%s, state=%s)",
+        poll_s,
+        ",".join(statuses),
+        state_path,
+    )
+
+    while True:
+        try:
+            db = get_agent().tools.db
+            orders = await asyncio.to_thread(
+                db.list_notifyable_paid_orders_with_details,
+                statuses,
+                limit=fetch_limit,
+            )
+            paid_set = {s.upper() for s in statuses}
+            paid_rows = [
+                o
+                for o in orders
+                if o.get("id") and str(o.get("status", "")).strip().upper() in paid_set
+            ]
+
+            if seed_existing:
+                for o in paid_rows:
+                    oid = str(o.get("id", ""))
+                    if oid:
+                        notified.add(oid)
+                save_ids(notified)
+                seed_existing = False
+                logger.info(
+                    "Primera ejecución: %d pedidos ya pagados registrados sin enviar aviso.",
+                    len(notified),
+                )
+            else:
+                targets = _load_sale_notify_chat_ids()
+                pending_sales = [
+                    o for o in paid_rows if str(o.get("id", "")) and str(o["id"]) not in notified
+                ]
+                if not targets:
+                    if pending_sales:
+                        now = time.monotonic()
+                        if now - _NO_SALE_SUBSCRIBERS_LAST_LOG > 300:
+                            logger.warning(
+                                "Hay %d venta(s) sin notificar pero ningún chat registrado. "
+                                "Escribe /start o cualquier mensaje al bot para registrar tu chat.",
+                                len(pending_sales),
+                            )
+                            _NO_SALE_SUBSCRIBERS_LAST_LOG = now
+                else:
+                    for o in pending_sales:
+                        oid = str(o.get("id", ""))
+                        text = _format_new_sale_message(o)
+                        any_ok = False
+                        for cid in targets:
+                            try:
+                                await application.bot.send_message(chat_id=cid, text=text)
+                                any_ok = True
+                            except Exception:
+                                logger.exception(
+                                    "No se pudo enviar aviso de venta del pedido %s al chat %s", oid, cid
+                                )
+                        if any_ok:
+                            notified.add(oid)
+                            save_ids(notified)
+        except Exception:
+            logger.exception("Fallo al consultar pedidos pagados para avisos")
+
+        await asyncio.sleep(poll_s)
+
+
+async def _post_init(application: Application) -> None:
+    asyncio.create_task(_paid_orders_watcher(application))
+
+
 def main() -> None:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         token = "8560443034:AAGaDYgab47RbD8REFiQnncajFC8Ocpt7q8"
         logger.warning("Using fallback TELEGRAM_BOT_TOKEN hardcoded in bot.py")
 
-    app = ApplicationBuilder().token(token).build()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .post_init(_post_init)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("hello", hello))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
