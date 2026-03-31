@@ -38,6 +38,7 @@ Rules:
 - WRITE mode is active for this turn; execute the requested data changes using available tools.
 - Use the minimum tools needed, then answer with what was changed and key IDs.
 - If request is ambiguous, ask a short clarification before writing.
+- Prices in the database are already full COP amounts (e.g., 18000); never divide by 100 and never abbreviate as 18k/18.
 - Be concise and practical.
 """
 
@@ -66,6 +67,7 @@ class TelegramBusinessAgent:
                 self.tools.get_product,
                 self.tools.create_product,
                 self.tools.update_product,
+                self.tools.delete_product,
                 self.tools.set_product_sizes,
                 self.tools.add_product_image,
                 self.tools.list_product_images,

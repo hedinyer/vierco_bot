@@ -67,6 +67,10 @@ class BusinessTools:
         updated = self.db.update_product(slug_or_id, changes)
         return _to_json(updated or {"error": "Product not found or no changes applied"})
 
+    def delete_product(self, slug_or_id: str) -> str:
+        deleted = self.db.delete_product(slug_or_id)
+        return _to_json({"deleted": deleted, "slug_or_id": slug_or_id})
+
     def set_product_sizes(self, slug_or_id: str, sizes_json: str) -> str:
         sizes = _loads_json(sizes_json, [])
         updated = self.db.update_product(slug_or_id, {"sizes": sizes})
@@ -206,6 +210,7 @@ class BusinessTools:
                     "get_product",
                     "create_product",
                     "update_product",
+                    "delete_product",
                     "set_product_sizes",
                     "add_product_image",
                     "list_product_images",

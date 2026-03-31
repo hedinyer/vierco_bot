@@ -44,6 +44,7 @@ class PendingImageFlow:
 PENDING_BY_CHAT: dict[int, PendingAction] = {}
 PENDING_IMAGE_FLOW_BY_CHAT: dict[int, PendingImageFlow] = {}
 ACTIVE_PRODUCT_REF_BY_CHAT: dict[int, str] = {}
+CHAT_CONTEXT_BY_CHAT: dict[int, list[tuple[str, str]]] = {}
 CONFIRM_TTL_MINUTES = 10
 WRITE_KEYWORDS = {
     "agrega",
@@ -101,6 +102,7 @@ READ_KEYWORDS = {
 }
 
 agent: TelegramBusinessAgent | None = None
+MAX_CONTEXT_TURNS = 12
 
 # Throttle log when no subscriber chats exist yet
 _NO_SALE_SUBSCRIBERS_LAST_LOG: float = 0.0
@@ -167,10 +169,58 @@ def _embed_one(row: dict[str, Any], key: str) -> dict[str, Any] | None:
 
 
 def _money_cop(cents: int | None) -> str:
-    v = (int(cents) if cents is not None else 0) / 100.0
-    if abs(v - round(v)) < 1e-9:
-        return f"${int(round(v)):,} COP"
-    return f"${v:,.2f} COP"
+    v = int(cents) if cents is not None else 0
+    return f"${v:,} COP"
+
+
+def _agent_memory_path() -> Path:
+    return Path("agent_history/agent_memory.md").resolve()
+
+
+def _append_agent_memory(role: str, text: str, *, chat_id: int | None = None, user_id: int | None = None) -> None:
+    path = _agent_memory_path()
+    ts = datetime.now(timezone.utc).isoformat()
+    cid = str(chat_id) if chat_id is not None else "-"
+    uid = str(user_id) if user_id is not None else "-"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"\n[{ts}] chat={cid} user={uid} role={role}\n")
+            f.write(f"{text.strip()}\n")
+    except Exception:
+        logger.exception("No se pudo escribir memoria de agente en %s", path)
+
+
+def _build_contextual_prompt(chat_id: int, text: str) -> str:
+    history = CHAT_CONTEXT_BY_CHAT.get(chat_id, [])
+    if not history:
+        return text
+    recent = history[-MAX_CONTEXT_TURNS:]
+    lines: list[str] = ["Contexto reciente de esta conversacion:"]
+    for role, msg in recent:
+        lines.append(f"{role}: {msg}")
+    lines.append("Mensaje actual del usuario:")
+    lines.append(text)
+    return "\n".join(lines)
+
+
+def _remember_turn(chat_id: int, user_text: str, assistant_text: str) -> None:
+    history = CHAT_CONTEXT_BY_CHAT.setdefault(chat_id, [])
+    history.append(("usuario", user_text.strip()))
+    history.append(("asistente", assistant_text.strip()))
+    CHAT_CONTEXT_BY_CHAT[chat_id] = history[-MAX_CONTEXT_TURNS:]
+
+
+async def _reply_and_log(update: Update, text: str) -> None:
+    if not update.message:
+        return
+    await update.message.reply_text(text)
+    _append_agent_memory(
+        "assistant",
+        text,
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
 
 
 def _format_new_sale_message(order: dict[str, Any]) -> str:
@@ -408,11 +458,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if update.effective_chat:
         register_sale_notify_subscriber_chat(update.effective_chat.id)
-    await update.message.reply_text(
-        "Bot conectado.\n"
-        "- Preguntas/consultas: se responden directo.\n"
-        "- Cambios en base de datos: te pido confirmacion con 'confirmar'."
+    _append_agent_memory(
+        "user",
+        "/start",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
     )
+    reply_text = (
+        "Bot conectado.\n"
+        "- Responde consultas y ejecuta cambios solicitados directamente.\n"
+        "- Mantiene memoria de contexto de la conversacion."
+    )
+    await _reply_and_log(update, reply_text)
 
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -421,7 +478,15 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat:
         register_sale_notify_subscriber_chat(update.effective_chat.id)
     name = update.effective_user.first_name if update.effective_user else "there"
-    await update.message.reply_text(f"Hello {name}")
+    user_text = "/hello"
+    reply_text = f"Hello {name}"
+    _append_agent_memory(
+        "user",
+        user_text,
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
+    await _reply_and_log(update, reply_text)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -435,12 +500,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     chat_id = update.effective_chat.id
     now = datetime.now(timezone.utc)
     current_agent = get_agent()
+    _append_agent_memory(
+        "user",
+        text,
+        chat_id=chat_id,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
 
     pending_flow = PENDING_IMAGE_FLOW_BY_CHAT.get(chat_id)
     if pending_flow:
         if pending_flow.expires_at and pending_flow.expires_at < now:
             PENDING_IMAGE_FLOW_BY_CHAT.pop(chat_id, None)
-            await update.message.reply_text("El flujo de imagen expiró. Vuelve a intentarlo.")
+            await _reply_and_log(update, "El flujo de imagen expiró. Vuelve a intentarlo.")
             return
 
         if pending_flow.product_ref is None:
@@ -448,13 +519,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             try:
                 product, err = _resolve_product_any(current_agent, text, chat_id=chat_id)
                 if err:
-                    await update.message.reply_text(err)
+                    await _reply_and_log(update, err)
                     return
             except Exception as exc:
-                await update.message.reply_text(f"No pude validar el producto: {exc}")
+                await _reply_and_log(update, f"No pude validar el producto: {exc}")
                 return
             if not product:
-                await update.message.reply_text("No encontré ese producto. Dime el nombre exacto del producto.")
+                await _reply_and_log(update, "No encontré ese producto. Dime el nombre exacto del producto.")
                 return
             pending_flow.product_ref = product["id"]
             ACTIVE_PRODUCT_REF_BY_CHAT[chat_id] = product["id"]
@@ -462,7 +533,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if pending_flow.mode == "replace":
                 images = current_agent.tools.db.list_product_images(product["id"])
                 if not images:
-                    await update.message.reply_text(
+                    await _reply_and_log(update,
                         "Ese producto no tiene imágenes registradas. Envía una foto ahora y la agrego."
                     )
                     pending_flow.mode = "add"
@@ -470,10 +541,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 lines = ["Estas son las imágenes actuales. Envíame el ID de la imagen que quieres reemplazar:"]
                 for img in images[:10]:
                     lines.append(f"- ID: {img.get('id')} | pos: {img.get('position')} | url: {img.get('image_url')}")
-                await update.message.reply_text("\n".join(lines))
+                await _reply_and_log(update, "\n".join(lines))
                 return
 
-            await update.message.reply_text(
+            await _reply_and_log(update,
                 "Perfecto. Ahora sube la foto desde Telegram (álbum o cámara) y la agrego al producto."
             )
             return
@@ -481,39 +552,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if pending_flow.mode == "replace" and pending_flow.image_id is None:
             image_id = _extract_image_id(text)
             if not image_id:
-                await update.message.reply_text("Envíame un ID de imagen válido (UUID) para reemplazar.")
+                await _reply_and_log(update, "Envíame un ID de imagen válido (UUID) para reemplazar.")
                 return
             pending_flow.image_id = image_id
-            await update.message.reply_text("Listo. Ahora sube la nueva foto y reemplazo esa imagen.")
+            await _reply_and_log(update, "Listo. Ahora sube la nueva foto y reemplazo esa imagen.")
             return
-
-    if text.lower() == "confirmar":
-        pending = PENDING_BY_CHAT.get(chat_id)
-        if not pending:
-            await update.message.reply_text("No hay ninguna accion pendiente para confirmar.")
-            return
-        if pending.expires_at < now:
-            PENDING_BY_CHAT.pop(chat_id, None)
-            await update.message.reply_text("La accion pendiente expiro. Vuelve a enviar tu solicitud.")
-            return
-
-        await update.message.reply_text("Confirmado. Ejecutando accion...")
-        try:
-            response = await asyncio.to_thread(
-                current_agent.run,
-                str(chat_id),
-                pending.original_message,
-                True,
-            )
-        except Exception as exc:
-            logger.exception("Error executing confirmed action")
-            await update.message.reply_text(f"Error ejecutando la accion: {exc}")
-            return
-        finally:
-            PENDING_BY_CHAT.pop(chat_id, None)
-
-        await update.message.reply_text(_clean_output(response))
-        return
 
     if _is_image_management_intent(text):
         mode = "replace" if any(k in text.lower() for k in ("cambiar", "reemplazar", "actualizar")) else "add"
@@ -526,7 +569,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     if not err and by_name:
                         product_ref = by_name["id"]
                 except Exception as exc:
-                    await update.message.reply_text(f"No pude validar el producto: {exc}")
+                    await _reply_and_log(update, f"No pude validar el producto: {exc}")
                     return
         PENDING_IMAGE_FLOW_BY_CHAT[chat_id] = PendingImageFlow(
             mode=mode,
@@ -538,16 +581,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             try:
                 product = current_agent.tools.db.get_product(product_ref)
             except Exception as exc:
-                await update.message.reply_text(f"No pude validar el producto: {exc}")
+                await _reply_and_log(update, f"No pude validar el producto: {exc}")
                 return
             if not product:
-                await update.message.reply_text("No encontré ese producto. Dime el nombre exacto del producto.")
+                await _reply_and_log(update, "No encontré ese producto. Dime el nombre exacto del producto.")
                 return
             ACTIVE_PRODUCT_REF_BY_CHAT[chat_id] = product_ref
             if mode == "replace":
                 images = current_agent.tools.db.list_product_images(product["id"])
                 if not images:
-                    await update.message.reply_text(
+                    await _reply_and_log(update,
                         "Ese producto no tiene imágenes registradas. Envía una foto ahora y la agrego."
                     )
                     PENDING_IMAGE_FLOW_BY_CHAT[chat_id].mode = "add"
@@ -555,20 +598,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 lines = ["Estas son las imágenes actuales. Envíame el ID de la imagen que quieres reemplazar:"]
                 for img in images[:10]:
                     lines.append(f"- ID: {img.get('id')} | pos: {img.get('position')} | url: {img.get('image_url')}")
-                await update.message.reply_text("\n".join(lines))
+                await _reply_and_log(update, "\n".join(lines))
             else:
-                await update.message.reply_text(
+                await _reply_and_log(update,
                     "Perfecto. Ahora sube la foto desde Telegram (álbum o cámara) y la agrego al producto."
                 )
             return
 
         if mode == "replace":
-            await update.message.reply_text(
+            await _reply_and_log(update,
                 "No tengo un producto activo en este chat.\n"
                 "Primero indícame una vez el nombre del producto, y luego ya podrás subir/cambiar fotos sin repetirlo."
             )
         else:
-            await update.message.reply_text(
+            await _reply_and_log(update,
                 "No tengo un producto activo en este chat.\n"
                 "Primero indícame una vez el nombre del producto, y luego ya podrás agregar fotos sin repetirlo."
             )
@@ -584,17 +627,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if resolved:
             ACTIVE_PRODUCT_REF_BY_CHAT[chat_id] = resolved["id"]
 
-    if _is_probable_write_intent(text):
-        PENDING_BY_CHAT[chat_id] = PendingAction(
-            original_message=text,
-            expires_at=now + timedelta(minutes=CONFIRM_TTL_MINUTES),
-        )
-        await update.message.reply_text(
-            "Detecte una accion de escritura (crear/actualizar/eliminar datos).\n"
-            "Responde con 'confirmar' para ejecutarla, o envia un nuevo mensaje para reemplazarla."
-        )
-        return
-
     try:
         # Si el usuario pide inventario/stock/tallas sin especificar, usamos el producto activo.
         low = text.lower()
@@ -607,11 +639,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     product = None
                 if product and product.get("name"):
                     text = f"{text} del producto {product.get('name')}"
-
-        response = await asyncio.to_thread(current_agent.run, str(chat_id), text, False)
+        contextual_prompt = _build_contextual_prompt(chat_id, text)
+        response = await asyncio.to_thread(current_agent.run, str(chat_id), contextual_prompt, True)
     except Exception as exc:
-        logger.exception("Error in read-only agent run")
-        await update.message.reply_text(
+        logger.exception("Error in agent run")
+        await _reply_and_log(update,
             "Error procesando tu solicitud. Revisa variables de entorno:\n"
             "- SUPABASE_URL\n"
             "- SUPABASE_SERVICE_ROLE_KEY\n"
@@ -619,7 +651,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"Detalle: {exc}"
         )
         return
-    await update.message.reply_text(_clean_output(response))
+    cleaned = _clean_output(response)
+    _remember_turn(chat_id, text, cleaned)
+    await _reply_and_log(update, cleaned)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -628,11 +662,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if update.effective_chat:
         register_sale_notify_subscriber_chat(update.effective_chat.id)
+    _append_agent_memory(
+        "user",
+        "[photo_uploaded]",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
 
     chat_id = update.effective_chat.id
     pending_flow = PENDING_IMAGE_FLOW_BY_CHAT.get(chat_id)
     if not pending_flow:
-        await update.message.reply_text(
+        await _reply_and_log(update,
             "Recibí la foto. Si quieres gestionarla, primero escribe algo como:\n"
             "- 'quiero agregar foto al producto <slug>'\n"
             "- 'quiero cambiar foto del producto <slug>'"
@@ -640,17 +680,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     if not pending_flow.product_ref:
-        await update.message.reply_text("Primero necesito el slug o ID del producto.")
+        await _reply_and_log(update, "Primero necesito el slug o ID del producto.")
         return
 
     current_agent = get_agent()
     try:
         product = current_agent.tools.db.get_product(pending_flow.product_ref)
     except Exception as exc:
-        await update.message.reply_text(f"No pude consultar el producto: {exc}")
+        await _reply_and_log(update, f"No pude consultar el producto: {exc}")
         return
     if not product:
-        await update.message.reply_text("No encontré ese producto. Reenvía el nombre del producto.")
+        await _reply_and_log(update, "No encontré ese producto. Reenvía el nombre del producto.")
         return
     ACTIVE_PRODUCT_REF_BY_CHAT[chat_id] = pending_flow.product_ref
 
@@ -672,15 +712,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         if pending_flow.mode == "replace":
             if not pending_flow.image_id:
-                await update.message.reply_text("Primero dime qué imagen quieres reemplazar (ID).")
+                await _reply_and_log(update, "Primero dime qué imagen quieres reemplazar (ID).")
                 return
             updated = current_agent.tools.db.update_product_image(
                 pending_flow.image_id, {"image_url": storage_url}
             )
             if not updated:
-                await update.message.reply_text("No pude actualizar: no encontré esa imagen ID.")
+                await _reply_and_log(update, "No pude actualizar: no encontré esa imagen ID.")
                 return
-            await update.message.reply_text(
+            await _reply_and_log(update,
                 f"Imagen reemplazada correctamente.\nImagen ID: {pending_flow.image_id}\nProducto: {product.get('name')}"
             )
         else:
@@ -690,11 +730,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 alt_text=product.get("name"),
                 position=0,
             )
-            await update.message.reply_text(
+            await _reply_and_log(update,
                 f"Imagen agregada correctamente.\nImagen ID: {created.get('id')}\nProducto: {product.get('name')}"
             )
     except Exception as exc:
-        await update.message.reply_text(f"No pude guardar la imagen: {exc}")
+        await _reply_and_log(update, f"No pude guardar la imagen: {exc}")
         return
     finally:
         PENDING_IMAGE_FLOW_BY_CHAT.pop(chat_id, None)

@@ -93,6 +93,16 @@ class SupabaseBusinessDB:
         self.client.table("products").update(changes).eq(field, slug_or_id).execute()
         return self.get_product(slug_or_id)
 
+    def delete_product(self, slug_or_id: str) -> bool:
+        product = self.get_product(slug_or_id)
+        if not product:
+            return False
+        product_id = str(product.get("id", "")).strip()
+        if not product_id:
+            return False
+        self.client.table("products").delete().eq("id", product_id).execute()
+        return self.get_product(product_id) is None
+
     def add_product_image(
         self, product_id: str, image_url: str, alt_text: str | None = None, position: int = 0
     ) -> dict[str, Any]:
