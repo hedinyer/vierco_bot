@@ -1,4 +1,5 @@
 
+<<<<<<< Updated upstream
 [2026-03-31T16:00:12.624802+00:00] chat=8319860230 user=8319860230 role=user
 Hola!
 
@@ -311,3 +312,10 @@ Actualmente, el producto no tiene características (features) registradas en la 
 4. "Fácil limpieza" - "Superficie resistente a desinfectantes y fácil de mantener higiénico"
 
 ¿Qué características te gustaría agregar o prefieres otra combinación?
+=======
+[2026-03-31T23:08:12.550337+00:00] chat=8319860230 user=8319860230 role=user
+Hola
+
+[2026-03-31T23:08:18.102088+00:00] chat=8319860230 user=8319860230 role=assistant
+¡Hola! ¿En qué puedo ayudarte hoy? Si deseas crear un producto, solo necesito los detalles que mencioné anteriormente (nombre, slug, precio, imagen, etc.). ¿Tienes esa información lista o prefieres otra acción?
+>>>>>>> Stashed changes
