@@ -1,0 +1,2 @@
+Error al descargar imagen https://uufwfagmbuncwbhtqseb.supabase.co/storage/v1/object/public/images/products/1099-miel-1775533086014.jpg: The read operation timed out
+PDF generado exitosamente: /home/hedinyer/Documents/vierco_bot/generaciones/catalogo_vierco.pdf

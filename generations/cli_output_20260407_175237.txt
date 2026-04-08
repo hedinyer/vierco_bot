@@ -1,0 +1,2 @@
+-rw-rw-r-- 1 hedinyer hedinyer 8.7M Apr  7 12:52 /home/hedinyer/Documents/vierco_bot/generaciones/catalogo_vierco.pdf
+/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_vierco.pdf: PDF document, version 1.3, 20 page(s)

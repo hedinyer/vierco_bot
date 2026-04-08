@@ -1,0 +1,23 @@
+
+
+[stderr]
+Traceback (most recent call last):
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/reportlab/pdfbase/pdfmetrics.py", line 698, in getFont
+    return _fonts[fontName]
+           ~~~~~~^^^^^^^^^^
+KeyError: 'Arial-Bold'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 42, in <module>
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/reportlab/pdfgen/canvas.py", line 1738, in setFont
+    font = pdfmetrics.getFont(self._fontname)
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/reportlab/pdfbase/pdfmetrics.py", line 700, in getFont
+    return findFontAndRegister(fontName)
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/reportlab/pdfbase/pdfmetrics.py", line 682, in findFontAndRegister
+    face = getTypeFace(fontName)
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/reportlab/pdfbase/pdfmetrics.py", line 639, in getTypeFace
+    return _typefaces[faceName]
+           ~~~~~~~~~~^^^^^^^^^^
+KeyError: 'Arial-Bold'

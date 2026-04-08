@@ -1,0 +1,6 @@
+
+
+[stderr]
+Traceback (most recent call last):
+  File "<stdin>", line 55, in <module>
+AttributeError: 'Canvas' object has no attribute 'splitText'

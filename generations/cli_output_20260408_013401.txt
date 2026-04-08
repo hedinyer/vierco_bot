@@ -1,0 +1,4 @@
+
+
+[stderr]
+/bin/sh: 1: weasyprint: not found

@@ -1,0 +1,2 @@
+-rw-rw-r-- 1 hedinyer hedinyer 7.3K Apr  7 20:36 /home/hedinyer/Documents/vierco_bot/generations/CATALOGO_VIERCO_20_PRODUCTOS.pdf
+Archivo listo para enviar al cliente

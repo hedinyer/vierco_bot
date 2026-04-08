@@ -1,0 +1,27 @@
+📄 Generando portada ejecutiva...
+📑 Generando índice...
+🛍️ Generando páginas de productos...
+📊 Generando resumen ejecutivo...
+
+
+[stderr]
+Traceback (most recent call last):
+  File "/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_profesional.py", line 433, in <module>
+    main()
+    ~~~~^^
+  File "/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_profesional.py", line 425, in main
+    pdf.output(output_path)
+    ~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/fpdf/fpdf.py", line 1065, in output
+    self.close()
+    ~~~~~~~~~~^^
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/fpdf/fpdf.py", line 246, in close
+    self._enddoc()
+    ~~~~~~~~~~~~^^
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/fpdf/fpdf.py", line 1636, in _enddoc
+    self._putpages()
+    ~~~~~~~~~~~~~~^^
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/fpdf/fpdf.py", line 1170, in _putpages
+    p = self.pages[n].encode("latin1") if PY3K else self.pages[n]
+        ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+UnicodeEncodeError: 'latin-1' codec can't encode character '\U0001f4de' in position 1353: ordinal not in range(256)

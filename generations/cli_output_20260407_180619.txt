@@ -1,0 +1,33 @@
+=== PROACTIVE AGENT ===
+total 88
+drwxrwxr-x 5 hedinyer hedinyer  4096 Apr  7 12:03 .
+drwxrwxr-x 5 hedinyer hedinyer  4096 Apr  7 12:49 ..
+drwxrwxr-x 2 hedinyer hedinyer  4096 Apr  7 12:03 assets
+-rw-rw-r-- 1 hedinyer hedinyer   134 Jan  1  1980 _meta.json
+drwxrwxr-x 2 hedinyer hedinyer  4096 Apr  7 12:03 references
+drwxrwxr-x 2 hedinyer hedinyer  4096 Apr  7 12:03 scripts
+-rw-rw-r-- 1 hedinyer hedinyer 20883 Jan  1  1980 SKILL.md
+-rw-rw-r-- 1 hedinyer hedinyer 20156 Jan  1  1980 SKILL-v2.3-backup.md
+-rw-rw-r-- 1 hedinyer hedinyer 16960 Jan  1  1980 SKILL-v3-draft.md
+-e 
+
+=== PDF GENERATOR ===
+total 44
+drwxrwxr-x 2 hedinyer hedinyer 4096 Apr  7 12:48 .
+drwxrwxr-x 5 hedinyer hedinyer 4096 Apr  7 12:49 ..
+-rw-rw-r-- 1 hedinyer hedinyer 4637 Jan  1  1980 advanced.md
+-rw-rw-r-- 1 hedinyer hedinyer   34 Jan  1  1980 EXTRA_FILES.txt
+-rw-rw-r-- 1 hedinyer hedinyer  132 Jan  1  1980 _meta.json
+-rw-rw-r-- 1 hedinyer hedinyer 3378 Jan  1  1980 SKILL.md
+-rw-rw-r-- 1 hedinyer hedinyer 9117 Jan  1  1980 templates.md
+-rw-rw-r-- 1 hedinyer hedinyer 2332 Jan  1  1980 tools.md
+-e 
+
+=== AGNXI SEARCH SKILL ===
+total 24
+drwxrwxr-x 2 hedinyer hedinyer 4096 Apr  7 12:21 .
+drwxrwxr-x 5 hedinyer hedinyer 4096 Apr  7 12:49 ..
+-rw-rw-r-- 1 hedinyer hedinyer  137 Jan  1  1980 _meta.json
+-rw-rw-r-- 1 hedinyer hedinyer 1706 Jan  1  1980 README.md
+-rw-rw-r-- 1 hedinyer hedinyer 2596 Jan  1  1980 search.py
+-rw-rw-r-- 1 hedinyer hedinyer 1652 Jan  1  1980 SKILL.md

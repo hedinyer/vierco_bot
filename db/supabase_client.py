@@ -88,6 +88,19 @@ class SupabaseBusinessDB:
         result = self.client.table("products").select("*").eq("slug", value).limit(1).execute()
         return result.data[0] if result.data else None
 
+    def get_product_full(self, slug_or_id: str) -> dict[str, Any] | None:
+        product = self.get_product(slug_or_id)
+        if not product:
+            return None
+        product_id = str(product.get("id", "")).strip()
+        images = self.list_product_images(product_id)
+        features = self.list_product_features(product_id)
+        return {
+            **product,
+            "product_images": images,
+            "product_features": features,
+        }
+
     def update_product(self, slug_or_id: str, changes: dict[str, Any]) -> dict[str, Any] | None:
         field = "id" if len(slug_or_id) == 36 and "-" in slug_or_id else "slug"
         self.client.table("products").update(changes).eq(field, slug_or_id).execute()
@@ -152,6 +165,25 @@ class SupabaseBusinessDB:
         }
         result = self.client.table("product_features").insert(payload).execute()
         return result.data[0]
+
+    def list_product_features(self, product_id: str) -> list[dict[str, Any]]:
+        result = (
+            self.client.table("product_features")
+            .select("*")
+            .eq("product_id", product_id)
+            .order("position")
+            .execute()
+        )
+        return result.data or []
+
+    def update_product_feature(self, feature_id: str, changes: dict[str, Any]) -> dict[str, Any] | None:
+        self.client.table("product_features").update(changes).eq("id", feature_id).execute()
+        result = self.client.table("product_features").select("*").eq("id", feature_id).limit(1).execute()
+        return result.data[0] if result.data else None
+
+    def delete_product_feature(self, feature_id: str) -> bool:
+        result = self.client.table("product_features").delete().eq("id", feature_id).execute()
+        return bool(result.data)
 
     # ---------- Customers ----------
     def create_customer(self, payload: dict[str, Any]) -> dict[str, Any]:

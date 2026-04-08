@@ -1,0 +1,16 @@
+📄 Generando portada ejecutiva...
+📑 Generando índice...
+
+
+[stderr]
+Traceback (most recent call last):
+  File "/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_profesional.py", line 434, in <module>
+    main()
+    ~~~~^^
+  File "/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_profesional.py", line 415, in main
+    pdf.create_index_page()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_profesional.py", line 208, in create_index_page
+    self.set_indent(10)
+    ^^^^^^^^^^^^^^^
+AttributeError: 'PDFProfesional' object has no attribute 'set_indent'

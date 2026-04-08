@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+from datetime import datetime
 from typing import Any
 
 from db import SupabaseBusinessDB
@@ -17,6 +20,11 @@ def _loads_json(value: str, fallback: Any) -> Any:
 class BusinessTools:
     def __init__(self, db: SupabaseBusinessDB | None = None) -> None:
         self.db = db or SupabaseBusinessDB()
+        self.workspace_root = os.getenv("VIERCO_WORKSPACE_ROOT", str(os.getcwd()))
+        self.generations_root = os.path.join(self.workspace_root, "generations")
+        self.tmp_root = os.path.join(self.generations_root, ".tmp")
+        os.makedirs(self.generations_root, exist_ok=True)
+        os.makedirs(self.tmp_root, exist_ok=True)
 
     # ---------- Products ----------
     def list_products(
@@ -31,7 +39,7 @@ class BusinessTools:
         return _to_json(rows)
 
     def get_product(self, slug_or_id: str) -> str:
-        row = self.db.get_product(slug_or_id)
+        row = self.db.get_product_full(slug_or_id)
         return _to_json(row or {"error": "Product not found"})
 
     def create_product(
@@ -115,6 +123,75 @@ class BusinessTools:
             position=position,
         )
         return _to_json(created)
+
+    def list_product_features(self, product_id: str) -> str:
+        rows = self.db.list_product_features(product_id)
+        return _to_json(rows)
+
+    def update_product_feature(self, feature_id: str, changes_json: str) -> str:
+        changes = _loads_json(changes_json, {})
+        updated = self.db.update_product_feature(feature_id, changes)
+        return _to_json(updated or {"error": "Feature not found or no changes applied"})
+
+    def delete_product_feature(self, feature_id: str) -> str:
+        deleted = self.db.delete_product_feature(feature_id)
+        return _to_json({"deleted": deleted, "feature_id": feature_id})
+
+    def run_ubuntu_cli(
+        self, command: str, save_to_path: str = "", timeout_seconds: int = 30
+    ) -> str:
+        """
+        Ejecuta comandos CLI en Ubuntu para tareas operativas (crear txt/pdf, scripts, etc.).
+        Seguridad básica: bloquea comandos peligrosos obvios.
+        """
+        low = (command or "").lower()
+        blocked_patterns = (
+            "rm -rf /",
+            "mkfs",
+            "shutdown",
+            "reboot",
+            ":(){:|:&};:",
+            "dd if=",
+            "sudo ",
+        )
+        if any(p in low for p in blocked_patterns):
+            return _to_json({"error": "Command blocked by safety policy"})
+
+        try:
+            env = os.environ.copy()
+            env["TMPDIR"] = self.tmp_root
+            completed = subprocess.run(
+                command,
+                shell=True,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=max(1, int(timeout_seconds)),
+                cwd=self.generations_root,
+                env=env,
+            )
+            payload = {
+                "exit_code": completed.returncode,
+                "stdout": completed.stdout[-6000:],
+                "stderr": completed.stderr[-6000:],
+            }
+            target = save_to_path.strip()
+            if target:
+                if not os.path.isabs(target):
+                    target = os.path.join(self.workspace_root, target)
+            else:
+                stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                target = os.path.join(self.generations_root, f"cli_output_{stamp}.txt")
+            os.makedirs(os.path.dirname(target) or self.generations_root, exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(completed.stdout or "")
+                if completed.stderr:
+                    f.write("\n\n[stderr]\n")
+                    f.write(completed.stderr)
+            payload["saved_to_path"] = target
+            return _to_json(payload)
+        except Exception as exc:
+            return _to_json({"error": str(exc)})
 
     # ---------- Customers ----------
     def create_customer(
@@ -218,6 +295,10 @@ class BusinessTools:
                     "delete_product_image",
                     "reorder_product_images",
                     "add_product_feature",
+                    "list_product_features",
+                    "update_product_feature",
+                    "delete_product_feature",
+                    "run_ubuntu_cli",
                 ],
                 "customers": [
                     "create_customer",

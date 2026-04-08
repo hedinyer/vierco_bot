@@ -1,0 +1,6 @@
+total 20
+drwxrwxr-x  5 hedinyer hedinyer 4096 Apr  7 12:49 .
+drwxrwxr-x 14 hedinyer hedinyer 4096 Apr  7 12:51 ..
+drwxrwxr-x  2 hedinyer hedinyer 4096 Apr  7 12:21 agnxi-search-skill-1.0.0
+drwxrwxr-x  2 hedinyer hedinyer 4096 Apr  7 12:48 pdf-generator-1.0.1
+drwxrwxr-x  5 hedinyer hedinyer 4096 Apr  7 12:03 proactive-agent-3.1.0

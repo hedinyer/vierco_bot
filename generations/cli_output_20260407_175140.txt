@@ -1,0 +1,13 @@
+
+
+[stderr]
+Traceback (most recent call last):
+  File "/home/hedinyer/Documents/vierco_bot/generations/catalogo_pdf.py", line 117, in <module>
+    create_catalog_pdf(productos, output_file)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hedinyer/Documents/vierco_bot/generations/catalogo_pdf.py", line 112, in create_catalog_pdf
+    pdf.output(output_path)
+    ~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/hedinyer/anaconda3/lib/python3.13/site-packages/fpdf/fpdf.py", line 1079, in output
+    f=open(name,'wb')
+FileNotFoundError: [Errno 2] No such file or directory: '/home/hedinyer/Documents/vierco_bot/generaciones/catalogo_vierco.pdf'

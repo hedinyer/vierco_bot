@@ -1,0 +1,11 @@
+
+
+[stderr]
+Traceback (most recent call last):
+  File "<string>", line 140, in <module>
+    create_product_card(c, producto, x, y)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 65, in create_product_card
+    c.strokeRect(x, y, 18*cm, card_height)
+    ^^^^^^^^^^^^
+AttributeError: 'Canvas' object has no attribute 'strokeRect'

@@ -1,0 +1,17 @@
+Collecting fpdf
+  Downloading fpdf-1.7.2.tar.gz (39 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: pillow in /home/hedinyer/anaconda3/lib/python3.13/site-packages (12.0.0)
+Building wheels for collected packages: fpdf
+  Building wheel for fpdf (pyproject.toml): started
+  Building wheel for fpdf (pyproject.toml): finished with status 'done'
+  Created wheel for fpdf: filename=fpdf-1.7.2-py2.py3-none-any.whl size=40759 sha256=c424d75c5e2a6af87e6cd86ef54186d11158bfed4d0f155daada06cbf9753b73
+  Stored in directory: /home/hedinyer/.cache/pip/wheels/aa/da/11/a3189f34ddc13c26a2d0f329eac46b728c7f31c39e4dc26243
+Successfully built fpdf
+Installing collected packages: fpdf
+Successfully installed fpdf-1.7.2
